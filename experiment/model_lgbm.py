@@ -6,15 +6,13 @@ from sklearn.metrics import roc_auc_score
 import gc
 
 def main():
-    print(">>> [LightGBM] 加载数据...")
+    print("Loading data...")
     df_train = pd.read_pickle('train_final.pkl')
     df_test = pd.read_pickle('test_final.pkl')
     
-    # 提取特征列（排除 TARGET 和 ID）
     feats = [f for f in df_train.columns if f not in ['TARGET','SK_ID_CURR']]
-    print(f"特征数量: {len(feats)}")
+    print(f"Number of features: {len(feats)}")
     
-    # 5折交叉验证
     folds = KFold(n_splits=5, shuffle=True, random_state=42)
     oof_preds = np.zeros(df_train.shape[0])
     sub_preds = np.zeros(df_test.shape[0])
@@ -47,13 +45,12 @@ def main():
         
         del train_x, train_y, valid_x, valid_y
         gc.collect()
-
+    
     print(f"Full AUC score: {roc_auc_score(df_train['TARGET'], oof_preds):.6f}")
     
-    # 保存提交
     submission = pd.DataFrame({'SK_ID_CURR': df_test['SK_ID_CURR'], 'TARGET': sub_preds})
     submission.to_csv('submission_lgbm.csv', index=False)
-    print("LightGBM 结果已保存。")
+    print("Results saved to submission_lgbm.csv")
 
 if __name__ == "__main__":
     main()

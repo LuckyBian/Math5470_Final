@@ -8,8 +8,8 @@ import os
 plt.style.use('seaborn-v0_8-whitegrid')
 sns.set_palette("muted")
 
-BASE = "/data/weizhen/code/math"
-OUTPUT_DIR = "/data/weizhen/code/math/plots"
+BASE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "home-credit-default-risk")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plots")
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
@@ -17,8 +17,8 @@ if not os.path.exists(OUTPUT_DIR):
 print("Loading application_train.csv...")
 df_train = pd.read_csv(f"{BASE}/application_train.csv")
 
-# --- 1. Target Distribution ---
-print("Analyzing 1. Target Distribution...")
+# Target Distribution
+print("Analyzing Target Distribution...")
 vc = df_train["TARGET"].value_counts().sort_index()
 rate = (vc / vc.sum()) * 100
 plt.figure(figsize=(6, 4))
@@ -34,8 +34,8 @@ plt.tight_layout()
 plt.savefig(f"{OUTPUT_DIR}/01_target_distribution.png")
 plt.close()
 
-# --- 2. Missing Values (Top 30) ---
-print("Analyzing 2. Missing Values...")
+# Missing Values
+print("Analyzing Missing Values...")
 na_rate = df_train.isna().mean().sort_values(ascending=False).head(30)
 plt.figure(figsize=(10, 8))
 na_rate.sort_values().plot(kind="barh")
@@ -45,8 +45,8 @@ plt.tight_layout()
 plt.savefig(f"{OUTPUT_DIR}/02_missing_values.png")
 plt.close()
 
-# --- 3. Age vs Default Rate ---
-print("Analyzing 3. Age vs Default Rate...")
+# Age vs Default Rate
+print("Analyzing Age vs Default Rate...")
 df_train["AGE_YEARS"] = -df_train["DAYS_BIRTH"] / 365.0
 mask = df_train["AGE_YEARS"].notna()
 bins = pd.qcut(df_train.loc[mask, "AGE_YEARS"], q=10, duplicates="drop")
@@ -61,8 +61,8 @@ plt.tight_layout()
 plt.savefig(f"{OUTPUT_DIR}/03_age_vs_default.png")
 plt.close()
 
-# --- 4. Years Employed vs Default Rate ---
-print("Analyzing 4. Years Employed vs Default Rate...")
+# Years Employed vs Default Rate
+print("Analyzing Years Employed vs Default Rate...")
 df_train["DAYS_EMPLOYED_ANOM"] = df_train["DAYS_EMPLOYED"] == 365243
 df_train["DAYS_EMPLOYED"] = df_train["DAYS_EMPLOYED"].replace(365243, np.nan)
 df_train["EMP_YEARS"] = -df_train["DAYS_EMPLOYED"] / 365.0
@@ -79,8 +79,8 @@ plt.tight_layout()
 plt.savefig(f"{OUTPUT_DIR}/04_employment_vs_default.png")
 plt.close()
 
-# --- 5. Credit/Income Ratio vs Default Rate ---
-print("Analyzing 5. Credit/Income Ratio vs Default Rate...")
+# Credit/Income Ratio vs Default Rate
+print("Analyzing Credit/Income Ratio vs Default Rate...")
 df_train["CREDIT_INCOME_RATIO"] = df_train["AMT_CREDIT"] / (df_train["AMT_INCOME_TOTAL"] + 1.0)
 upper = df_train["CREDIT_INCOME_RATIO"].quantile(0.99)
 df_train["CREDIT_INCOME_RATIO"] = df_train["CREDIT_INCOME_RATIO"].clip(upper=upper)
@@ -97,8 +97,8 @@ plt.tight_layout()
 plt.savefig(f"{OUTPUT_DIR}/05_credit_income_ratio.png")
 plt.close()
 
-# --- 6. EXT_SOURCE_2 vs Default Rate ---
-print("Analyzing 6. EXT_SOURCE_2 vs Default Rate...")
+# EXT_SOURCE_2 vs Default Rate
+print("Analyzing EXT_SOURCE_2 vs Default Rate...")
 mask = df_train["EXT_SOURCE_2"].notna()
 bins = pd.qcut(df_train.loc[mask, "EXT_SOURCE_2"], q=10, duplicates="drop")
 rate = df_train.loc[mask].groupby(bins, observed=True)["TARGET"].mean() * 100
@@ -112,8 +112,8 @@ plt.tight_layout()
 plt.savefig(f"{OUTPUT_DIR}/06_ext_source_2.png")
 plt.close()
 
-# --- 7. Previous Application Refusals ---
-print("Analyzing 7. Previous Application Refusals...")
+# Previous Application Refusals
+print("Analyzing Previous Application Refusals...")
 prev = pd.read_csv(f"{BASE}/previous_application.csv", usecols=["SK_ID_CURR", "NAME_CONTRACT_STATUS"])
 refused_cnt = (prev["NAME_CONTRACT_STATUS"] == "Refused").groupby(prev["SK_ID_CURR"]).sum()
 df_merged = df_train[["SK_ID_CURR", "TARGET"]].merge(refused_cnt.rename("REFUSED_CNT"), left_on="SK_ID_CURR", right_index=True, how="left")
@@ -130,8 +130,8 @@ plt.savefig(f"{OUTPUT_DIR}/07_prev_app_refusals.png")
 plt.close()
 del prev, df_merged
 
-# --- 8. Active Bureau Credits ---
-print("Analyzing 8. Active Bureau Credits...")
+# Active Bureau Credits
+print("Analyzing Active Bureau Credits...")
 bureau = pd.read_csv(f"{BASE}/bureau.csv", usecols=["SK_ID_CURR", "CREDIT_ACTIVE"])
 active_cnt = (bureau["CREDIT_ACTIVE"] == "Active").groupby(bureau["SK_ID_CURR"]).sum()
 df_merged = df_train[["SK_ID_CURR", "TARGET"]].merge(active_cnt.rename("ACTIVE_CNT"), left_on="SK_ID_CURR", right_index=True, how="left")
@@ -148,17 +148,13 @@ plt.savefig(f"{OUTPUT_DIR}/08_active_bureau_credits.png")
 plt.close()
 del bureau, df_merged
 
-# --- 9. Installments Payments (Overdue) ---
-print("Analyzing 9. Installments Payments...")
+# Installments Payments (Overdue)
+print("Analyzing Installments Payments...")
 ins = pd.read_csv(f"{BASE}/installments_payments.csv", usecols=["SK_ID_CURR", "DAYS_INSTALMENT", "DAYS_ENTRY_PAYMENT"])
 ins["DPD"] = (ins["DAYS_ENTRY_PAYMENT"] - ins["DAYS_INSTALMENT"]).clip(lower=0)
 dpd_mean = ins.groupby("SK_ID_CURR")["DPD"].mean().rename("DPD_MEAN").reset_index()
 df_merged = df_train[["SK_ID_CURR", "TARGET"]].merge(dpd_mean, on="SK_ID_CURR", how="left")
 mask = df_merged["DPD_MEAN"].notna() & (df_merged["DPD_MEAN"] > 0) 
-# Only plot for those who have some history, and potentially split 0 vs >0 or bins
-# For simplicity, following the prompt's quantile approach but handling many 0s
-# If many 0s, qcut might fail with duplicate edges if not handled.
-# Let's bin: 0, and then quantiles for >0
 df_merged["DPD_BIN"] = pd.cut(df_merged["DPD_MEAN"], bins=[-1, 0, 1, 5, 1000], labels=["0", "0-1", "1-5", ">5"])
 rate = df_merged.groupby("DPD_BIN", observed=True)["TARGET"].mean() * 100
 plt.figure(figsize=(8, 5))
@@ -171,8 +167,8 @@ plt.savefig(f"{OUTPUT_DIR}/09_installments_dpd.png")
 plt.close()
 del ins, df_merged, dpd_mean
 
-# --- 10. Credit Card Utilization ---
-print("Analyzing 10. Credit Card Utilization...")
+# Credit Card Utilization
+print("Analyzing Credit Card Utilization...")
 cc = pd.read_csv(f"{BASE}/credit_card_balance.csv", usecols=["SK_ID_CURR", "AMT_BALANCE", "AMT_CREDIT_LIMIT_ACTUAL"])
 cc["UTIL"] = cc["AMT_BALANCE"] / (cc["AMT_CREDIT_LIMIT_ACTUAL"] + 1.0)
 util_mean = cc.groupby("SK_ID_CURR")["UTIL"].mean().rename("CC_UTIL_MEAN").reset_index()
@@ -191,8 +187,8 @@ plt.savefig(f"{OUTPUT_DIR}/10_cc_utilization.png")
 plt.close()
 del cc, df_merged, util_mean
 
-# --- 11. Correlation Heatmap (Supplement) ---
-print("Analyzing 11. Correlation Heatmap...")
+# Correlation Heatmap
+print("Analyzing Correlation Heatmap...")
 corr_cols = ["TARGET", "EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3", 
              "DAYS_BIRTH", "DAYS_EMPLOYED", "AMT_CREDIT", "AMT_GOODS_PRICE", "AMT_INCOME_TOTAL"]
 corr_data = df_train[corr_cols].corr()
@@ -203,8 +199,8 @@ plt.tight_layout()
 plt.savefig(f"{OUTPUT_DIR}/11_correlation_heatmap.png")
 plt.close()
 
-# --- 12. Categorical Features (Supplement) ---
-print("Analyzing 12. Categorical Features...")
+# Categorical Features
+print("Analyzing Categorical Features...")
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
 # Gender
@@ -224,4 +220,3 @@ plt.savefig(f"{OUTPUT_DIR}/12_categorical_features.png")
 plt.close()
 
 print("All analysis completed. Plots saved to:", OUTPUT_DIR)
-

@@ -4,47 +4,41 @@ import lightgbm as lgb
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score
 import gc
+import warnings
+
+warnings.filterwarnings('ignore')
 
 def main():
-    print(">>> 加载数据 train_v2.pkl ...")
+    print("Loading data train_v2.pkl ...")
     df_train = pd.read_pickle('train_v2.pkl')
     df_test = pd.read_pickle('test_v2.pkl')
     
-    # ============================================================
-    # 【关键修复】强制类型转换
-    # 修复 ValueError: pandas dtypes must be int, float or bool
-    # ============================================================
-    print(">>> 正在检查并修复数据类型...")
+    print("Checking and fixing data types...")
     
-    # 找出所有 object (字符串/对象) 类型的列
     obj_cols = [col for col in df_train.columns if df_train[col].dtype == 'object']
     
     if len(obj_cols) > 0:
-        print(f"发现 {len(obj_cols)} 个 object 类型列，正在强制转换为 float...")
+        print(f"Found {len(obj_cols)} object columns, forcing conversion to float...")
         for col in obj_cols:
-            # errors='coerce' 会把无法转换的变成 NaN，这是我们想要的
             df_train[col] = pd.to_numeric(df_train[col], errors='coerce')
             df_test[col] = pd.to_numeric(df_test[col], errors='coerce')
     
-    # 再次确保 inf 被清洗 (双重保险)
     df_train = df_train.replace([np.inf, -np.inf], np.nan)
     df_test = df_test.replace([np.inf, -np.inf], np.nan)
-    # ============================================================
 
     feats = [f for f in df_train.columns if f not in ['TARGET', 'SK_ID_CURR']]
-    print(f"特征数量: {len(feats)}")
+    print(f"Number of features: {len(feats)}")
     
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=1001)
     oof_preds = np.zeros(df_train.shape[0])
     sub_preds = np.zeros(df_test.shape[0])
     
-    print(">>> 开始训练 LGBM V2...")
+    print("Training LGBM V2...")
     
     for n_fold, (train_idx, valid_idx) in enumerate(folds.split(df_train[feats], df_train['TARGET'])):
         train_x, train_y = df_train[feats].iloc[train_idx], df_train['TARGET'].iloc[train_idx]
         valid_x, valid_y = df_train[feats].iloc[valid_idx], df_train['TARGET'].iloc[valid_idx]
         
-        # 针对 700+ 维特征的参数调优
         clf = lgb.LGBMClassifier(
             n_estimators=10000,
             learning_rate=0.02,
@@ -60,7 +54,6 @@ def main():
             verbose=-1
         )
         
-        # 回调函数
         callbacks = [
             lgb.early_stopping(stopping_rounds=200),
             lgb.log_evaluation(period=500)
@@ -76,7 +69,6 @@ def main():
         oof_preds[valid_idx] = clf.predict_proba(valid_x)[:, 1]
         sub_preds += clf.predict_proba(df_test[feats])[:, 1] / folds.n_splits
         
-        # 打印当前 Fold 的最佳分数
         best_score = clf.best_score_['valid_0']['auc']
         print(f"Fold {n_fold+1} Best AUC: {best_score:.6f}")
         
@@ -85,9 +77,8 @@ def main():
 
     print(f"LGBM V2 Full AUC: {roc_auc_score(df_train['TARGET'], oof_preds):.6f}")
     
-    # 保存结果
     pd.DataFrame({'SK_ID_CURR': df_test['SK_ID_CURR'], 'TARGET': sub_preds}).to_csv('submission_lgbm_v2.csv', index=False)
-    print("结果已保存为 submission_lgbm_v2.csv")
+    print("Results saved to submission_lgbm_v2.csv")
 
 if __name__ == "__main__":
     main()

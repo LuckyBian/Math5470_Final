@@ -8,7 +8,6 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-# 复用之前定义的特征工程函数（确保和 Pro 版本一致）
 def generate_domain_features(df):
     df['NEW_EXT_SOURCES_MEAN'] = df[['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].mean(axis=1)
     df['NEW_EXT_SOURCES_STD'] = df[['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']].std(axis=1)
@@ -27,15 +26,13 @@ def generate_domain_features(df):
     return df
 
 def main():
-    print(">>> [Seed Averaging] 加载数据...")
+    print("Loading data...")
     df_train = pd.read_pickle('train_final.pkl')
     df_test = pd.read_pickle('test_final.pkl')
     
-    # 清洗 inf
     df_train = df_train.replace([np.inf, -np.inf], np.nan)
     df_test = df_test.replace([np.inf, -np.inf], np.nan)
     
-    # 特征工程
     df_train = generate_domain_features(df_train)
     df_test = generate_domain_features(df_test)
     
@@ -48,14 +45,11 @@ def main():
     del df_train, df_test
     gc.collect()
     
-    # 定义随机种子列表 (跑5次)
     SEEDS = [42, 2023, 1024, 555, 999]
     
-    # 存储每次的预测结果
     all_test_preds = []
     all_oof_preds = np.zeros(len(X))
     
-    # LGBM Pro 参数 (最稳的参数)
     base_params = {
         'objective': 'binary',
         'boosting_type': 'gbdt',
@@ -75,16 +69,14 @@ def main():
         'verbose': -1
     }
     
-    print(f">>> 开始 Seed Averaging (共 {len(SEEDS)} 个种子)...")
+    print(f"Starting Seed Averaging ({len(SEEDS)} seeds)...")
 
     for i, seed in enumerate(SEEDS):
-        print(f"\n>>> 正在训练 Seed {seed} ({i+1}/{len(SEEDS)})...")
+        print(f"Training Seed {seed} ({i+1}/{len(SEEDS)})...")
         
-        # 更新参数里的随机种子
         params = base_params.copy()
         params['random_state'] = seed
         
-        # 每一轮种子也使用 StratifiedKFold，但是 shuffle 的种子也要变！
         folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
         
         seed_oof = np.zeros(len(X))
@@ -105,26 +97,21 @@ def main():
                 callbacks=callbacks
             )
             
-            # 累加预测
             seed_oof[valid_idx] = clf.predict_proba(valid_x)[:, 1]
             seed_test += clf.predict_proba(X_test)[:, 1] / folds.n_splits
         
         print(f"Seed {seed} AUC: {roc_auc_score(y, seed_oof):.6f}")
         
-        # 将这一轮种子的预测结果加入列表
         all_test_preds.append(seed_test)
-        # 累加 OOF 用于计算总分
         all_oof_preds += seed_oof / len(SEEDS)
 
-    # 计算最终平均
     final_test_pred = np.mean(all_test_preds, axis=0)
     
-    print(f"\n>>> Seed Averaging Full AUC: {roc_auc_score(y, all_oof_preds):.6f}")
+    print(f"Seed Averaging Full AUC: {roc_auc_score(y, all_oof_preds):.6f}")
     
-    # 保存结果
     submission = pd.DataFrame({'SK_ID_CURR': test_ids, 'TARGET': final_test_pred})
     submission.to_csv('submission_lgbm_seed_avg.csv', index=False)
-    print(">>> 结果已保存为: submission_lgbm_seed_avg.csv")
+    print("Results saved to submission_lgbm_seed_avg.csv")
 
 if __name__ == "__main__":
     main()

@@ -3,13 +3,6 @@ import pandas as pd
 import gc
 import time
 from contextlib import contextmanager
-from lightgbm import LGBMClassifier
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import KFold, StratifiedKFold
-import matplotlib.pyplot as plt
-import seaborn as sns
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
 
 @contextmanager
 def timer(title):
@@ -24,26 +17,20 @@ def one_hot_encoder(df, nan_as_category=True):
     new_columns = [c for c in df.columns if c not in original_columns]
     return df, new_columns
 
-# ============================================================================
-# 1. 升级版 Application - 增加大量业务特征
-# ============================================================================
 def application_train_test(num_rows=None, nan_as_category=False):
     df = pd.read_csv('application_train.csv', nrows=num_rows)
     test_df = pd.read_csv('application_test.csv', nrows=num_rows)
     print(f"Train samples: {len(df)}, Test samples: {len(test_df)}")
     df = pd.concat([df, test_df], ignore_index=True)
     
-    # 清洗异常值
     df['DAYS_EMPLOYED'].replace(365243, np.nan, inplace=True)
     
-    # --- Top 方案的关键衍生特征 ---
     df['DAYS_EMPLOYED_PERC'] = df['DAYS_EMPLOYED'] / df['DAYS_BIRTH']
     df['INCOME_CREDIT_PERC'] = df['AMT_INCOME_TOTAL'] / df['AMT_CREDIT']
     df['INCOME_PER_PERSON'] = df['AMT_INCOME_TOTAL'] / df['CNT_FAM_MEMBERS']
     df['ANNUITY_INCOME_PERC'] = df['AMT_ANNUITY'] / df['AMT_INCOME_TOTAL']
     df['PAYMENT_RATE'] = df['AMT_ANNUITY'] / df['AMT_CREDIT']
     
-    # 外部源特征交互 (黄金特征)
     for function_name in ['min', 'max', 'mean', 'nanmedian', 'var']:
         df['EXT_SOURCES_{}'.format(function_name)] = eval('np.{}'.format(function_name))(
             df[['EXT_SOURCE_1', 'EXT_SOURCE_2', 'EXT_SOURCE_3']], axis=1)
@@ -53,9 +40,6 @@ def application_train_test(num_rows=None, nan_as_category=False):
     gc.collect()
     return df
 
-# ============================================================================
-# 2. 升级版 Bureau - 关键：拆分 Active 和 Closed 贷款
-# ============================================================================
 def bureau_and_balance(num_rows=None, nan_as_category=True):
     bureau = pd.read_csv('bureau.csv', nrows=num_rows)
     bb = pd.read_csv('bureau_balance.csv', nrows=num_rows)
@@ -72,7 +56,6 @@ def bureau_and_balance(num_rows=None, nan_as_category=True):
     del bb, bb_agg
     gc.collect()
     
-    # --- 原始 Bureau 特征 ---
     num_aggregations = {
         'DAYS_CREDIT': ['min', 'max', 'mean', 'var'],
         'DAYS_CREDIT_ENDDATE': ['min', 'max', 'mean'],
@@ -98,7 +81,6 @@ def bureau_and_balance(num_rows=None, nan_as_category=True):
     bureau_agg = bureau.groupby('SK_ID_CURR').agg({**num_aggregations, **cat_aggregations})
     bureau_agg.columns = pd.Index(['BURO_' + e[0] + "_" + e[1].upper() for e in bureau_agg.columns.tolist()])
     
-    # --- 【关键提分点】拆分 Active (正在还) 和 Closed (已还清) ---
     active = bureau[bureau['CREDIT_ACTIVE_Active'] == 1]
     active_agg = active.groupby('SK_ID_CURR').agg(num_aggregations)
     active_agg.columns = pd.Index(['ACTIVE_' + e[0] + "_" + e[1].upper() for e in active_agg.columns.tolist()])
@@ -115,9 +97,6 @@ def bureau_and_balance(num_rows=None, nan_as_category=True):
     gc.collect()
     return bureau_agg
 
-# ============================================================================
-# 3. 升级版 Previous Application
-# ============================================================================
 def previous_applications(num_rows=None, nan_as_category=True):
     prev = pd.read_csv('previous_application.csv', nrows=num_rows)
     prev, cat_cols = one_hot_encoder(prev, nan_as_category=True)
@@ -150,7 +129,6 @@ def previous_applications(num_rows=None, nan_as_category=True):
     prev_agg = prev.groupby('SK_ID_CURR').agg({**num_aggregations, **cat_aggregations})
     prev_agg.columns = pd.Index(['PREV_' + e[0] + "_" + e[1].upper() for e in prev_agg.columns.tolist()])
     
-    # --- 【关键提分点】单独聚合“被拒绝”的申请 ---
     approved = prev[prev['NAME_CONTRACT_STATUS_Approved'] == 1]
     approved_agg = approved.groupby('SK_ID_CURR').agg(num_aggregations)
     approved_agg.columns = pd.Index(['APPROVED_' + e[0] + "_" + e[1].upper() for e in approved_agg.columns.tolist()])
@@ -165,9 +143,6 @@ def previous_applications(num_rows=None, nan_as_category=True):
     gc.collect()
     return prev_agg
 
-# ============================================================================
-# 4. 升级版 POS CASH
-# ============================================================================
 def pos_cash(num_rows=None, nan_as_category=True):
     pos = pd.read_csv('POS_CASH_balance.csv', nrows=num_rows)
     pos, cat_cols = one_hot_encoder(pos, nan_as_category=True)
@@ -187,9 +162,6 @@ def pos_cash(num_rows=None, nan_as_category=True):
     gc.collect()
     return pos_agg
 
-# ============================================================================
-# 5. 升级版 Installments - 最重要的提分表
-# ============================================================================
 def installments_payments(num_rows=None, nan_as_category=True):
     ins = pd.read_csv('installments_payments.csv', nrows=num_rows)
     
@@ -217,16 +189,12 @@ def installments_payments(num_rows=None, nan_as_category=True):
     ins_agg = ins.groupby('SK_ID_CURR').agg(aggregations)
     ins_agg.columns = pd.Index(['INSTAL_' + e[0] + "_" + e[1].upper() for e in ins_agg.columns.tolist()])
     
-    # Count 计数
     ins_agg['INSTAL_COUNT'] = ins.groupby('SK_ID_CURR').size()
     
     del ins
     gc.collect()
     return ins_agg
 
-# ============================================================================
-# 6. 升级版 Credit Card
-# ============================================================================
 def credit_card_balance(num_rows=None, nan_as_category=True):
     cc = pd.read_csv('credit_card_balance.csv', nrows=num_rows)
     cc, cat_cols = one_hot_encoder(cc, nan_as_category=True)
@@ -278,14 +246,11 @@ def main(debug=False):
         
     print(f"Final Shape: {df.shape}")
     
-    # 替换 inf 并压缩内存
     df = df.replace([np.inf, -np.inf], np.nan)
     
-    # 重命名列名以避免 LGBM 报错
     import re
     df = df.rename(columns = lambda x:re.sub('[^A-Za-z0-9_]+', '', x))
     
-    # 拆分保存
     train = df[df['TARGET'].notnull()]
     test = df[df['TARGET'].isnull()]
     

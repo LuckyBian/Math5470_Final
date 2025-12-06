@@ -1,10 +1,8 @@
 import pandas as pd
 import numpy as np
 import gc
+import re
 
-# ==========================================
-# 特征工程核心函数 (多表聚合)
-# ==========================================
 def one_hot_encoder(df, nan_as_category=True):
     original_columns = list(df.columns)
     categorical_columns = [col for col in df.columns if df[col].dtype == 'object']
@@ -13,20 +11,18 @@ def one_hot_encoder(df, nan_as_category=True):
     return df, new_columns
 
 def process_full_data():
-    print(">>> 1. 读取主表 Application Train/Test ...")
+    print("Reading Application Train/Test ...")
     df = pd.read_csv('application_train.csv')
     test_df = pd.read_csv('application_test.csv')
     df = pd.concat([df, test_df], ignore_index=True)
     del test_df; gc.collect()
 
-    # 业务特征衍生
     df['DAYS_EMPLOYED'].replace(365243, np.nan, inplace=True)
     df['PAYMENT_RATE'] = df['AMT_ANNUITY'] / df['AMT_CREDIT']
     df['INCOME_CREDIT_PERC'] = df['AMT_INCOME_TOTAL'] / df['AMT_CREDIT']
     df, _ = one_hot_encoder(df)
 
-    # ---------------------------------------------------------
-    print(">>> 2. 处理 Bureau & Balance (历史信用记录)...")
+    print("Processing Bureau & Balance ...")
     bureau = pd.read_csv('bureau.csv')
     bb = pd.read_csv('bureau_balance.csv')
     
@@ -37,7 +33,6 @@ def process_full_data():
     bureau.drop(['SK_ID_BUREAU'], axis=1, inplace=True)
     del bb, bb_agg; gc.collect()
     
-    # Bureau 聚合
     num_agg = {
         'DAYS_CREDIT': ['min', 'max', 'mean', 'var'],
         'DAYS_CREDIT_ENDDATE': ['min', 'max', 'mean'],
@@ -49,8 +44,7 @@ def process_full_data():
     df = df.join(bureau_agg, how='left', on='SK_ID_CURR')
     del bureau, bureau_agg; gc.collect()
 
-    # ---------------------------------------------------------
-    print(">>> 3. 处理 Previous Applications (历史申请)...")
+    print("Processing Previous Applications ...")
     prev = pd.read_csv('previous_application.csv')
     prev, _ = one_hot_encoder(prev)
     prev['APP_CREDIT_PERC'] = prev['AMT_APPLICATION'] / prev['AMT_CREDIT']
@@ -67,8 +61,7 @@ def process_full_data():
     df = df.join(prev_agg, how='left', on='SK_ID_CURR')
     del prev, prev_agg; gc.collect()
 
-    # ---------------------------------------------------------
-    print(">>> 4. 处理 Installments (分期还款 - 关键特征)...")
+    print("Processing Installments ...")
     ins = pd.read_csv('installments_payments.csv')
     ins['PAYMENT_PERC'] = ins['AMT_PAYMENT'] / ins['AMT_INSTALMENT']
     ins['PAYMENT_DIFF'] = ins['AMT_INSTALMENT'] - ins['AMT_PAYMENT']
@@ -85,21 +78,16 @@ def process_full_data():
     df = df.join(ins_agg, how='left', on='SK_ID_CURR')
     del ins, ins_agg; gc.collect()
 
-    # ---------------------------------------------------------
-    print(">>> 5. 数据保存...")
-    # 拆分回训练集和测试集
+    print("Saving data ...")
     df_train = df[df['TARGET'].notnull()]
     df_test = df[df['TARGET'].isnull()]
     
-    # 修复列名 (LightGBM 不喜欢列名里有特殊符号)
-    import re
     df_train = df_train.rename(columns = lambda x:re.sub('[^A-Za-z0-9_]+', '', x))
     df_test = df_test.rename(columns = lambda x:re.sub('[^A-Za-z0-9_]+', '', x))
 
-    # 保存为 Pickle 格式 (读取速度比 CSV 快 10 倍，且保留数据类型)
     df_train.to_pickle('train_final.pkl')
     df_test.to_pickle('test_final.pkl')
-    print("完成！数据已保存为 train_final.pkl 和 test_final.pkl")
+    print("Done! Data saved as train_final.pkl and test_final.pkl")
 
 if __name__ == "__main__":
     process_full_data()

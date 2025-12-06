@@ -36,7 +36,36 @@ python model_adaboost.py      # AdaBoost
 python model_extratrees.py    # ExtraTrees
 ```
 
-### 3. Model Ensembling
+### 3. Ablation Studies
+We conducted ablation studies to understand feature importance by removing specific components and observing performance drops.
+
+Run the ablation experiments:
+```bash
+# Train model without aggregated features (bureau, prev_app, etc.)
+python ablation_no_aggregations.py
+
+# Train model without EXT_SOURCE external scoring features
+python ablation_no_ext_source.py
+```
+
+**Results Visualization:**
+The results are automatically logged to `ablation_results.csv`. To generate the comparison plots:
+```bash
+python visualization.py
+```
+
+**Key Findings:**
+- **AUC Comparison:**
+  ![AUC Comparison](plots/1_auc_comparison.png)
+
+- **Performance Drop Analysis:**
+  Removing aggregated features causes a significant drop, highlighting the value of historical data. EXT_SOURCE features are also critical.
+  ![Drop Analysis](plots/2_drop_analysis.png)
+
+- **Risk Distribution:**
+  ![Risk Distribution](plots/3_risk_distribution.png)
+
+### 4. Model Ensembling
 After training single models, you can combine their predictions to improve performance.
 
 ```bash
@@ -63,6 +92,11 @@ python final_blend.py         # Final weighted blending of best models
 - **`model_extratrees.py`**: ExtraTrees classifier.
 - **`model_knn_features.py`**: KNN-based feature extraction/model.
 
+### Ablation Studies
+- **`ablation_no_aggregations.py`**: Experiment removing all aggregated features from auxiliary tables.
+- **`ablation_no_ext_source.py`**: Experiment removing external source features.
+- **`visualization.py`**: Script to visualize ablation results (requires `ablation_results.csv`).
+
 ### Ensemble & Utility
 - **`ensemble_final.py`**: Implementation of voting/averaging ensembles.
 - **`stacking_final.py`**: Stacking implementation where first-level model predictions are used to train a meta-learner.
@@ -78,5 +112,7 @@ Ensure you have the required Python packages installed:
 - `lightgbm`
 - `xgboost`
 - `scikit-learn`
+- `matplotlib`
+- `seaborn`
 
 All scripts assume the data files are located in the path defined within the scripts (usually relative to the project root or in a `home-credit-default-risk` folder).
